@@ -1,4 +1,3 @@
-
 pipeline {
     agent any
 
@@ -19,16 +18,16 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 echo '📦 Installing Node.js dependencies...'
-                sh 'node --version'
-                sh 'npm --version'
-                sh 'npm install'
+                bat 'node --version'
+                bat 'npm --version'
+                bat 'npm install'
             }
         }
 
         stage('Test') {
             steps {
                 echo '🧪 Running tests...'
-                sh 'npm test'
+                bat 'npm test'
             }
         }
 
@@ -36,19 +35,20 @@ pipeline {
             steps {
                 echo '🚀 Deploying application...'
 
-                // Stop any previously running instance
-                sh '''
-                    echo "Stopping old instance (if any)..."
-                    pkill -f "node server.js" || true
-                    sleep 1
+                // Kill any existing node process on port 3000
+                bat '''
+                    FOR /F "tokens=5" %%P IN ('netstat -ano ^| findstr :%APP_PORT% ^| findstr LISTENING') DO (
+                        echo Killing PID %%P on port %APP_PORT%
+                        taskkill /PID %%P /F
+                    )
+                    exit /b 0
                 '''
 
-                // Start the server in the background
-                sh '''
-                    nohup node server.js > app.log 2>&1 &
-                    echo $! > app.pid
-                    sleep 2
-                    echo "Server started with PID: $(cat app.pid)"
+                // Start server in background using Windows START command
+                bat '''
+                    START /B node server.js > app.log 2>&1
+                    ping 127.0.0.1 -n 3 > nul
+                    echo Server started!
                 '''
             }
         }
@@ -56,16 +56,9 @@ pipeline {
         stage('Verify') {
             steps {
                 echo '✅ Verifying deployment...'
-                sh '''
-                    sleep 1
-                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${APP_PORT})
-                    echo "HTTP Status: $STATUS"
-                    if [ "$STATUS" = "200" ]; then
-                        echo "✅ App is live at http://localhost:${APP_PORT}"
-                    else
-                        echo "❌ App returned status $STATUS"
-                        exit 1
-                    fi
+                bat '''
+                    ping 127.0.0.1 -n 3 > nul
+                    curl -s -o nul -w "HTTP Status: %%{http_code}" http://localhost:%APP_PORT%
                 '''
             }
         }
@@ -76,7 +69,7 @@ pipeline {
         success {
             echo """
 ====================================
- ✅ BUILD SUCCEEDED
+ BUILD SUCCEEDED
  App live at: http://localhost:${APP_PORT}
  Open your browser to see changes!
 ====================================
@@ -85,15 +78,14 @@ pipeline {
         failure {
             echo """
 ====================================
- ❌ BUILD FAILED
+ BUILD FAILED
  Check the logs above for errors.
 ====================================
 """
-            // Tail the app log for debugging
-            sh 'cat app.log || true'
+            bat 'type app.log || exit /b 0'
         }
         always {
-            echo '📋 Pipeline finished.'
+            echo 'Pipeline finished.'
         }
     }
 }
